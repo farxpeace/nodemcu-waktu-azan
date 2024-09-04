@@ -47,3 +47,6 @@
 
 -   Connect each LED's anode (longer leg) to a corresponding GPIO pin (D0, D1, D2) via a 220-ohm resistor.
 -   Connect the cathode (shorter leg) of each LED to the common ground.
+
+#### SD Card files structure
+![structure](https://i.imgur.com/gOF9a2p.png)

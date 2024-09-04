@@ -37,39 +37,53 @@ StaticJsonDocument<2048> jsonDoc; // JSON document to store parsed data
 
 // Function to play Adhan based on filename and control relay
 void playAdhan(const char* filename, int relayPin) {
-  if (SD.exists(filename)) {
+  String fullPath = String("/mp3/") + filename; // Create the full path for the MP3 file
+
+  if (SD.exists(fullPath.c_str())) {
     digitalWrite(LED_MP3_PLAYING, HIGH); // Turn on MP3 playing LED
-    mp3.playMP3Folder(filename); // Play MP3 file
+    mp3.playMP3Folder(filename); // Play MP3 file from mp3 folder
     Serial.print("Playing: ");
-    Serial.println(filename);
+    Serial.println(fullPath);
     digitalWrite(relayPin, HIGH); // Turn relay ON
     delay(RELAY_ON_DURATION); // Keep relay on for a certain duration
     digitalWrite(relayPin, LOW); // Turn relay OFF
     digitalWrite(LED_MP3_PLAYING, LOW); // Turn off MP3 playing LED
   } else {
     Serial.print("File not found: ");
-    Serial.println(filename);
+    Serial.println(fullPath);
   }
 }
 
-// Function to compare current time with Adhan time
-bool isTimeForAdhan(String adhanTime) {
+// Function to compare current time with Adhan time or reminder time
+bool isTimeForAction(String adhanTime, int offsetMinutes = 0) {
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
 
   int adhanHour = adhanTime.substring(0, 2).toInt();
   int adhanMinute = adhanTime.substring(3, 5).toInt();
 
-  return (currentHour == adhanHour && currentMinute == adhanMinute);
+  int actionHour = adhanHour;
+  int actionMinute = adhanMinute - offsetMinutes;
+
+  if (actionMinute < 0) {
+    actionMinute += 60;
+    actionHour -= 1;
+    if (actionHour < 0) {
+      actionHour += 24;
+    }
+  }
+
+  return (currentHour == actionHour && currentMinute == actionMinute);
 }
 
 // Function to load JSON file for the current month
 bool loadMonthlyJsonFile(const char* fileName) {
-  File file = SD.open(fileName, "r");
+  String fullPath = String("/json/") + fileName; // Create the full path for the JSON file
+  File file = SD.open(fullPath.c_str(), "r");
 
   if (!file) {
     Serial.print("Failed to open JSON file: ");
-    Serial.println(fileName);
+    Serial.println(fullPath);
     return false;
   }
 
@@ -140,8 +154,8 @@ void loop() {
   String currentDate = timeClient.getFormattedDate().substring(0, 10); // Format: YYYY-MM-DD
   String currentMonthYear = timeClient.getFormattedDate().substring(0, 7); // Format: YYYY-MM
 
-  // Construct the filename based on the current month and year
-  String fileName = "/" + currentMonthYear + ".json";
+  // Construct the filename based on the current month and year within the "json" folder
+  String fileName = currentMonthYear + ".json";
 
   // Load the JSON file for the current month
   if (!loadMonthlyJsonFile(fileName.c_str())) {
@@ -153,17 +167,27 @@ void loop() {
   if (jsonDoc.containsKey(currentDate)) {
     JsonObject todayTimes = jsonDoc[currentDate];
 
-    // Check each Adhan time and play corresponding MP3 file with relay
-    if (isTimeForAdhan(todayTimes["fajr"])) {
-      playAdhan("/fajr.mp3", RELAY_FAJR);
-    } else if (isTimeForAdhan(todayTimes["dhuhr"])) {
-      playAdhan("/dhuhr.mp3", RELAY_DHUHR);
-    } else if (isTimeForAdhan(todayTimes["asr"])) {
-      playAdhan("/asr.mp3", RELAY_ASR);
-    } else if (isTimeForAdhan(todayTimes["maghrib"])) {
-      playAdhan("/maghrib.mp3", RELAY_MAGHRIB);
-    } else if (isTimeForAdhan(todayTimes["isha"])) {
-      playAdhan("/isha.mp3", RELAY_ISHA);
+    // Check each Adhan time and play corresponding reminder and Adhan MP3 file with relay
+    if (isTimeForAction(todayTimes["fajr"], 15)) {
+      playAdhan("reminder_fajr.mp3", RELAY_FAJR);
+    } else if (isTimeForAction(todayTimes["fajr"])) {
+      playAdhan("fajr.mp3", RELAY_FAJR);
+    } else if (isTimeForAction(todayTimes["dhuhr"], 15)) {
+      playAdhan("reminder_dhuhr.mp3", RELAY_DHUHR);
+    } else if (isTimeForAction(todayTimes["dhuhr"])) {
+      playAdhan("dhuhr.mp3", RELAY_DHUHR);
+    } else if (isTimeForAction(todayTimes["asr"], 15)) {
+      playAdhan("reminder_asr.mp3", RELAY_ASR);
+    } else if (isTimeForAction(todayTimes["asr"])) {
+      playAdhan("asr.mp3", RELAY_ASR);
+    } else if (isTimeForAction(todayTimes["maghrib"], 15)) {
+      playAdhan("reminder_maghrib.mp3", RELAY_MAGHRIB);
+    } else if (isTimeForAction(todayTimes["maghrib"])) {
+      playAdhan("maghrib.mp3", RELAY_MAGHRIB);
+    } else if (isTimeForAction(todayTimes["isha"], 15)) {
+      playAdhan("reminder_isha.mp3", RELAY_ISHA);
+    } else if (isTimeForAction(todayTimes["isha"])) {
+      playAdhan("isha.mp3", RELAY_ISHA);
     }
   } else {
     Serial.println("No Adhan times for today.");
