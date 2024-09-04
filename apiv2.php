@@ -49,23 +49,11 @@ function fetchPage($kodzon,$tahun,$bulan)
                 //Y-m-d
                 $date_dttm = date("Y-m-d", myStrtotime($waktu['date']));
 				$arrData['data'][$date_dttm] = array(
-                    'imsak_alert' => far_alert_time($waktu['imsak']),
 					'imsak' => far_convert_time($waktu['imsak']),
-
-					'fajr_alert' => far_alert_time($waktu['fajr']),
                     'fajr' => far_convert_time($waktu['fajr']),
-
-                    'dhuhr_alert' => far_alert_time($waktu['dhuhr']),
                     'dhuhr' => far_convert_time($waktu['dhuhr']),
-
-                    'asr_alert' => far_alert_time($waktu['asr']),
                     'asar' => far_convert_time($waktu['asr']),
-
-                    'maghrib_alert' => far_alert_time($waktu['maghrib']),
                     'maghrib' => far_convert_time($waktu['maghrib']),
-
-
-					'isha_alert' => far_alert_time($waktu['isha']),
                     'isha' => far_convert_time($waktu['isha']),
 				);
 			}
