@@ -48,7 +48,8 @@ function fetchPage($kodzon,$tahun,$bulan)
 			foreach ($waktusolat['prayerTime'] as $waktu) {
                 //Y-m-d
                 $date_dttm = date("Y-m-d", myStrtotime($waktu['date']));
-				$arrData['data'][$date_dttm] = array(
+				$arrData['data'][] = array(
+                        'dttm' => date("Y-m-d", myStrtotime($waktu['date'])),
 					'imsak' => far_convert_time($waktu['imsak']),
                     'fajr' => far_convert_time($waktu['fajr']),
                     'dhuhr' => far_convert_time($waktu['dhuhr']),
@@ -124,14 +125,17 @@ if(isset($_GET['zon']) && isset($_GET['tahun']) && !isset($_GET['bulan']))
         if (!file_exists($json_directory.DIRECTORY_SEPARATOR.$b['month_number'])) {
             //mkdir($json_directory.DIRECTORY_SEPARATOR.$b['month_number'], 0777, true);
         }
+        foreach($b['data'] as $c => $d){
+            $filename = $json_directory.DIRECTORY_SEPARATOR.$d['dttm'].'.json';
 
-        $filename = $json_directory.DIRECTORY_SEPARATOR.$b['month_number'].'.json';
+            //write
+            $json_data = json_encode($d);
+            $file = fopen($filename,'w');
+            fwrite($file, $json_data);
+            fclose($file);
+        }
 
-        //write
-        $json_data = json_encode($b['data']);
-        $file = fopen($filename,'w');
-        fwrite($file, $json_data);
-        fclose($file);
+
     }
 }
 
