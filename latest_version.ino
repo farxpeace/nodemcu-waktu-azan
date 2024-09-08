@@ -1,6 +1,6 @@
 /*
-  Rui Santos
-  Complete project details at https://RandomNerdTutorials.com/esp8266-nodemcu-date-time-ntp-client-server-arduino/
+  Fara Farizul
+  Complete project details at https://github.com/farxpeace/nodemcu-waktu-azan
   
   Permission is hereby granted, free of charge, to any person obtaining a copy
   of this software and associated documentation files.
@@ -44,6 +44,9 @@ String  json_dhuhr = "0";
 String  json_asar = "0";
 String  json_maghrib = "0";
 String  json_isha = "0";
+
+String adhan_is_playing = "no";
+String zikr_is_playing = "no";
 
 String *getCurrentDttm() {
   timeClient.update();
@@ -171,9 +174,15 @@ bool isTimeForAction(String adhanTime, int offsetMinutes = 0) {
 }
 void playAdhan(const char* filename, int trackNumber) {
   String fullPath = String("/mp3/") + filename; // Create the full path for the MP3 file
+  
+  
   mp3.playFromMP3Folder(trackNumber); // Play MP3 file from mp3 folder
   Serial.print("Playing: ");
   Serial.println(fullPath);
+  //Set var adhan_is_playing
+  adhan_is_playing = "yes";
+  delay(1000*60*5); //5 minutes
+  adhan_is_playing = "no";
 }
 
 void setup() {
@@ -182,6 +191,8 @@ void setup() {
   Serial.begin(115200);
   mp3Serial.begin(9600);
   mp3.begin(mp3Serial);
+  delay(1000);
+  mp3.volume(30);
 
   Serial.println("Waktu Azan begin : Connecting to Wifi");
   wifiManager.setConfigPortalTimeout(60);
@@ -189,7 +200,7 @@ void setup() {
   res = wifiManager.autoConnect("Waktu Azan", "12345678");
   if (!res) {
     Serial.println("Failed to connect");
-    // ESP.restart();
+    ESP.restart();
   } else {
     //if you get here you have connected to the WiFi
     Serial.println("connected...yeey :)");
@@ -211,22 +222,35 @@ void loop() {
   Serial.print("Array Current time: ");
   Serial.println(current_time);
 
-  temporary_date = current_date;
+  temporary_date = current_date; //uncomment to just get daily json and save
   if (!loadDailyJsonFile(current_date.c_str())) {
     delay(60000); // Wait a minute before trying again
     return;
   }
-  if(temporary_date == json_dttm){
-    Serial.println("Date match. Check for adhan time");
-    if (isTimeForAction(json_fajr)) {
-      Serial.println("Adhan time match for Fajr");
-      //playAdhan("reminder_fajr.mp3", 2);
-    }else{
-      Serial.println("No Adhan match.");
-    }
+
+
+  if(adhan_is_playing == "yes"){
+    Serial.println("Adhan is playing");
+    Serial.print("Volume was set to : ");
+    Serial.println(mp3.currentVolume());
   }else{
-    Serial.println("No Adhan times for today.");
+    if(temporary_date == json_dttm){
+      Serial.println("Date match. Check for adhan time");
+      if (isTimeForAction(json_fajr)) {
+        Serial.println("Adhan time match for Fajr");
+        playAdhan("fajr.mp3", 2);
+      }else{
+        Serial.println("No Adhan match.");
+      }
+    }else{
+      Serial.println("No Adhan times for today.");
+    }
+    delay(10000);
   }
 
-  delay(5000);
+  //check if mp3 is playing
+  
+
+
+  
 }
