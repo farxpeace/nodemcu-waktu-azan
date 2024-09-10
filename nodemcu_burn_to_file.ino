@@ -1,60 +1,157 @@
+/*
+  Rui Santos
+  Complete project details at https://RandomNerdTutorials.com/esp8266-nodemcu-date-time-ntp-client-server-arduino/
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files.
+  
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+*/
+
 #include <ESP8266WiFi.h>
-#include <DFPlayerMini_Fast.h>
-#include <ArduinoJson.h>
-#include <SD.h>
-#include <SPI.h>
-#include <SoftwareSerial.h>
-#include <WiFiUdp.h>
+#include <ESP8266WebServer.h>  // Replace with WebServer.h for ESP32
+#include <WiFiManager.h>
 #include <NTPClient.h>
-
-// Replace with your network credentials
-const char* ssid     = "your_SSID";
-const char* password = "your_PASSWORD";
-
-// Define the pin connections
-#define SD_CS_PIN D8
-
-// Relay pin definitions
-#define RELAY_FAJR D3
-#define RELAY_DHUHR D4
-#define RELAY_ASR D5
-#define RELAY_MAGHRIB D6
-#define RELAY_ISHA D7
-
-// LED pin definitions
-#define LED_WIFI_STATUS D0 // Blue LED
-#define LED_POWER_STATUS D1 // Green LED
-#define LED_MP3_PLAYING D2 // Red LED
+#include <WiFiUdp.h>
+#include <ArduinoJson.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecureBearSSL.h>
+#include <DFPlayerMini_Fast.h>
+#include <SoftwareSerial.h>
 
 SoftwareSerial mp3Serial(D4, D5); // RX, TX
 DFPlayerMini_Fast mp3;
+
+WiFiManager wifiManager;
+
+//Your Domain name with URL path or IP address with path
+const char *serverName = "https://pusara.tpirs.net/json/";
+
+WiFiClientSecure wifi;
+HTTPClient http;
+
+// Define NTP Client to get time
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000); // NTP server, UTC offset in seconds, update interval
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
-const unsigned long RELAY_ON_DURATION = 30000; // Relay on for 30 seconds
+JsonDocument jsonDoc; // JSON document to store parsed data
+String temporary_date = "1111";
+String  json_dttm = "0";
+String  json_imsak = "0";
+String  json_fajr = "0";
+String  json_dhuhr = "0";
+String  json_asar = "0";
+String  json_maghrib = "0";
+String  json_isha = "0";
 
-StaticJsonDocument<2048> jsonDoc; // JSON document to store parsed data
+String adhan_is_playing = "no";
+String zikr_is_playing = "no";
 
-// Function to play Adhan based on filename and control relay
-void playAdhan(const char* filename, int relayPin) {
-  String fullPath = String("/mp3/") + filename; // Create the full path for the MP3 file
+String *getCurrentDttm() {
+  timeClient.update();
+  time_t epochTime = timeClient.getEpochTime();
 
-  if (SD.exists(fullPath.c_str())) {
-    digitalWrite(LED_MP3_PLAYING, HIGH); // Turn on MP3 playing LED
-    mp3.playMP3Folder(filename); // Play MP3 file from mp3 folder
-    Serial.print("Playing: ");
-    Serial.println(fullPath);
-    digitalWrite(relayPin, HIGH); // Turn relay ON
-    delay(RELAY_ON_DURATION); // Keep relay on for a certain duration
-    digitalWrite(relayPin, LOW); // Turn relay OFF
-    digitalWrite(LED_MP3_PLAYING, LOW); // Turn off MP3 playing LED
-  } else {
-    Serial.print("File not found: ");
-    Serial.println(fullPath);
-  }
+  String formattedTime = timeClient.getFormattedTime();
+  //Get a time structure
+  struct tm *ptm = gmtime((time_t *)&epochTime);
+
+  int currentYear = ptm->tm_year + 1900;
+  int currentMonth = ptm->tm_mon + 1;
+  int monthDay = ptm->tm_mday;
+  int currentHour = timeClient.getHours();
+  int currentMinute = timeClient.getMinutes();
+
+  static char json_current_date[16];
+  static char json_current_time[16];
+  static String json_current_dttm[2];
+
+  sprintf(json_current_date, "%04d-%02d-%02d", currentYear, currentMonth, monthDay);
+  sprintf(json_current_time, "%02d:%02d", currentHour, currentMinute);
+
+  json_current_dttm[0] = json_current_date;
+  json_current_dttm[1] = json_current_time;
+
+
+
+  return json_current_dttm;
 }
 
-// Function to compare current time with Adhan time or reminder time
+bool loadDailyJsonFile(const char *fileName) {
+  if(temporary_date == json_dttm){
+    Serial.print("JSON Already Loaded for : ");
+    Serial.println(temporary_date);
+    return true;
+  }else{
+    //get new json for today
+    String fullPath = String(serverName) + fileName + String(".json");  // Create the full path for the JSON file
+    String getpath = String("/json/") + fileName + String(".json");
+    Serial.print("Fullpath is : ");
+    Serial.println(fullPath);
+    Serial.print("GET Path is : ");
+    Serial.println(getpath);
+
+    wifi.setInsecure();
+    http.useHTTP10(true);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    Serial.print("[HTTPS] begin...\n");
+
+    if (http.begin(wifi, fullPath)) { 
+      Serial.print("[HTTPS] GET...\n");
+      // start connection and send HTTP header
+      int httpCode = http.GET();
+      // httpCode will be negative on error
+      if (httpCode > 0) {
+        // HTTP header has been send and Server response header has been handled
+        Serial.printf("[HTTPS] GET... code: %d\n", httpCode);
+        // file found at server
+        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+            String payload = http.getString();
+            //String payload = https.getString(1024);  // optionally pre-reserve string to avoid reallocations in chunk mode
+            //Serial.println(payload);
+            DeserializationError error = deserializeJson(jsonDoc, payload);
+            if (error) {
+              Serial.println("Failed to parse JSON");
+              return false;
+            }
+            serializeJsonPretty(jsonDoc, Serial);
+            json_dttm = String(jsonDoc["dttm"]);
+            json_imsak = String(jsonDoc["imsak"]);
+            json_fajr = String(jsonDoc["fajr"]);
+            json_dhuhr = String(jsonDoc["dhuhr"]);
+            json_asar = String(jsonDoc["asar"]);
+            json_maghrib = String(jsonDoc["maghrib"]);
+            json_isha = String(jsonDoc["isha"]);
+
+            //SET JSON DATA
+            Serial.print("JSON DATA imsak : ");
+            Serial.println(json_imsak);
+            Serial.print("JSON DATA fajr : ");
+            Serial.println(json_fajr);
+            Serial.print("JSON DATA dhuhr : ");
+            Serial.println(json_dhuhr);
+            Serial.print("JSON DATA asar : ");
+            Serial.println(json_asar);
+            Serial.print("JSON DATA maghrib : ");
+            Serial.println(json_maghrib);
+            Serial.print("JSON DATA isha : ");
+            Serial.println(json_isha);
+          }
+        } else {
+          Serial.printf("[HTTPS] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      }
+      http.end();
+    }else {
+      Serial.printf("[HTTPS] Unable to connect\n");
+    }
+  }
+  
+
+  
+  
+
+  return true;
+}
 bool isTimeForAction(String adhanTime, int offsetMinutes = 0) {
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
@@ -75,123 +172,121 @@ bool isTimeForAction(String adhanTime, int offsetMinutes = 0) {
 
   return (currentHour == actionHour && currentMinute == actionMinute);
 }
-
-// Function to load JSON file for the current month
-bool loadMonthlyJsonFile(const char* fileName) {
-  String fullPath = String("/json/") + fileName; // Create the full path for the JSON file
-  File file = SD.open(fullPath.c_str(), "r");
-
-  if (!file) {
-    Serial.print("Failed to open JSON file: ");
-    Serial.println(fullPath);
-    return false;
+void playAdhan(const char* filename, int trackNumber, int playType) {
+  String fullPath = String("/mp3/") + filename; // Create the full path for the MP3 file
+  delay(1000);
+  mp3.volume(30);
+  delay(1000);
+  mp3.stop();
+  mp3.stopRepeatPlay();
+  delay(1000);
+  
+  mp3.playFromMP3Folder(trackNumber); // Play MP3 file from mp3 folder
+  Serial.print("Playing: ");
+  Serial.println(fullPath);
+  //Set var adhan_is_playing
+  adhan_is_playing = "yes";
+  zikr_is_playing = "no";
+  if(playType == 1){
+    delay(1000*60*5); //5 minutes
+  } else if(playType == 2){
+    delay(30000); //5 30 seconds
   }
-
-  DeserializationError error = deserializeJson(jsonDoc, file);
-  if (error) {
-    Serial.println("Failed to parse JSON");
-    file.close();
-    return false;
-  }
-
-  file.close();
-  return true;
+  
+  adhan_is_playing = "no";
 }
 
+
 void setup() {
+  WiFi.mode(WIFI_STA);  // explicitly set mode, esp defaults to STA+AP
+  // Initialize Serial Monitor
   Serial.begin(115200);
   mp3Serial.begin(9600);
   mp3.begin(mp3Serial);
+  delay(1000);
+  mp3.volume(15);
 
-  WiFi.begin(ssid, password);
-
-  // Initialize LED pins
-  pinMode(LED_WIFI_STATUS, OUTPUT);
-  pinMode(LED_POWER_STATUS, OUTPUT);
-  pinMode(LED_MP3_PLAYING, OUTPUT);
-
-  // Initialize relay pins
-  pinMode(RELAY_FAJR, OUTPUT);
-  pinMode(RELAY_DHUHR, OUTPUT);
-  pinMode(RELAY_ASR, OUTPUT);
-  pinMode(RELAY_MAGHRIB, OUTPUT);
-  pinMode(RELAY_ISHA, OUTPUT);
-
-  // Ensure all relays and LEDs are initially OFF
-  digitalWrite(RELAY_FAJR, LOW);
-  digitalWrite(RELAY_DHUHR, LOW);
-  digitalWrite(RELAY_ASR, LOW);
-  digitalWrite(RELAY_MAGHRIB, LOW);
-  digitalWrite(RELAY_ISHA, LOW);
-  digitalWrite(LED_WIFI_STATUS, LOW);
-  digitalWrite(LED_MP3_PLAYING, LOW);
-
-  // Indicate NodeMCU power is ON
-  digitalWrite(LED_POWER_STATUS, HIGH);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
+  Serial.println("Waktu Azan begin : Connecting to Wifi");
+  wifiManager.setConfigPortalTimeout(60);
+  bool res;
+  res = wifiManager.autoConnect("Waktu Azan", "12345678");
+  if (!res) {
+    Serial.println("Failed to connect");
+    ESP.restart();
+  } else {
+    //if you get here you have connected to the WiFi
+    Serial.println("connected...yeey :)");
   }
 
-  Serial.println("Connected to WiFi");
-  digitalWrite(LED_WIFI_STATUS, HIGH); // Indicate WiFi connected
+  // Initialize a NTPClient to get time
   timeClient.begin();
-
-  // Initialize SD card
-  if (!SD.begin(SD_CS_PIN)) {
-    Serial.println("SD Card initialization failed!");
-    return;
-  }
-
-  Serial.println("SD Card initialized.");
+  timeClient.setTimeOffset(28800);
 }
 
+
 void loop() {
-  timeClient.update();
+  
 
-  // Get current date
-  String currentDate = timeClient.getFormattedDate().substring(0, 10); // Format: YYYY-MM-DD
-  String currentMonthYear = timeClient.getFormattedDate().substring(0, 7); // Format: YYYY-MM
+  String *json_current_dttm = getCurrentDttm();
+  String current_date = String(json_current_dttm[0]);
+  String current_time = String(json_current_dttm[1]);
+  Serial.print("Array Current date: ");
+  Serial.println(current_date);
+  Serial.print("Array Current time: ");
+  Serial.println(current_time);
 
-  // Construct the filename based on the current month and year within the "json" folder
-  String fileName = currentMonthYear + ".json";
-
-  // Load the JSON file for the current month
-  if (!loadMonthlyJsonFile(fileName.c_str())) {
+  temporary_date = current_date; //uncomment to just get daily json and save
+  if (!loadDailyJsonFile(current_date.c_str())) {
     delay(60000); // Wait a minute before trying again
     return;
   }
 
-  // Check if the JSON contains today's date
-  if (jsonDoc.containsKey(currentDate)) {
-    JsonObject todayTimes = jsonDoc[currentDate];
 
-    // Check each Adhan time and play corresponding reminder and Adhan MP3 file with relay
-    if (isTimeForAction(todayTimes["fajr"], 15)) {
-      playAdhan("reminder_fajr.mp3", RELAY_FAJR);
-    } else if (isTimeForAction(todayTimes["fajr"])) {
-      playAdhan("fajr.mp3", RELAY_FAJR);
-    } else if (isTimeForAction(todayTimes["dhuhr"], 15)) {
-      playAdhan("reminder_dhuhr.mp3", RELAY_DHUHR);
-    } else if (isTimeForAction(todayTimes["dhuhr"])) {
-      playAdhan("dhuhr.mp3", RELAY_DHUHR);
-    } else if (isTimeForAction(todayTimes["asr"], 15)) {
-      playAdhan("reminder_asr.mp3", RELAY_ASR);
-    } else if (isTimeForAction(todayTimes["asr"])) {
-      playAdhan("asr.mp3", RELAY_ASR);
-    } else if (isTimeForAction(todayTimes["maghrib"], 15)) {
-      playAdhan("reminder_maghrib.mp3", RELAY_MAGHRIB);
-    } else if (isTimeForAction(todayTimes["maghrib"])) {
-      playAdhan("maghrib.mp3", RELAY_MAGHRIB);
-    } else if (isTimeForAction(todayTimes["isha"], 15)) {
-      playAdhan("reminder_isha.mp3", RELAY_ISHA);
-    } else if (isTimeForAction(todayTimes["isha"])) {
-      playAdhan("isha.mp3", RELAY_ISHA);
+  if(adhan_is_playing == "yes"){
+    Serial.println("Adhan is playing");
+    Serial.print("Volume was set to : ");
+    Serial.println(mp3.currentVolume());
+  }else{
+    if(temporary_date == json_dttm){
+      Serial.println("Date match. Check for adhan time");
+      if (isTimeForAction(json_fajr, 15)) {
+        Serial.println("Reminder Adhan time match for Fajr");
+        playAdhan("reminder_fajr.mp3", 1, 2);
+      } else if(isTimeForAction(json_fajr)){
+        Serial.println("Reminder Adhan time match for Fajr");
+        playAdhan("fajr.mp3", 2, 1);
+      } else if(isTimeForAction(json_dhuhr, 15)){ // reminder Dhuhr
+        Serial.println("Reminder Adhan time match for Dhuhr");
+        playAdhan("dhuhr.mp3", 3, 2);
+      } else if(isTimeForAction(json_dhuhr)){ // reminder Dhuhr
+        Serial.println("Adhan time match for Dhuhr");
+        playAdhan("dhuhr.mp3", 4, 1);
+      } else if(isTimeForAction(json_asar, 15)){ // reminder asr
+        Serial.println("Reminder Adhan time match for Asr");
+        playAdhan("asr.mp3", 5, 2);
+      } else if(isTimeForAction(json_asar)){ // asr
+        Serial.println("Adhan time match for Asr");
+        playAdhan("asr.mp3", 6, 1);
+      } else if(isTimeForAction(json_maghrib, 15)){ // reminder maghrib
+        Serial.println("Reminder Adhan time match for Maghrib");
+        playAdhan("maghrib.mp3", 7, 2);
+      } else if(isTimeForAction(json_maghrib)){ // maghrib
+        Serial.println("Adhan time match for Maghrib");
+        playAdhan("maghrib.mp3", 8, 1);
+      } else if(isTimeForAction(json_isha, 15)){ // reminder Isha
+        Serial.println("Reminder Adhan time match for Isha");
+        playAdhan("isha.mp3", 9, 2);
+      } else if(isTimeForAction(json_isha)){ // Isha
+        Serial.println("Adhan time match for Isha");
+        playAdhan("isha.mp3", 10, 1);
+      } else{
+        Serial.println("No Adhan match.");
+      }
+    }else{
+      Serial.println("No Adhan times for today.");
     }
-  } else {
-    Serial.println("No Adhan times for today.");
+    delay(10000);
   }
 
-  delay(60000); // Check every minute
+  
 }
