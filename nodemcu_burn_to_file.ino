@@ -204,17 +204,21 @@ void setup() {
   mp3Serial.begin(9600);
   mp3.begin(mp3Serial);
   delay(1000);
-  mp3.volume(15);
+  mp3.volume(30);
+  mp3.playFromMP3Folder(13); //0012_wifi_error_while_connecting.mp3
 
-  Serial.println("Waktu Azan begin : Connecting to Wifi");
   wifiManager.setConfigPortalTimeout(60);
   bool res;
   res = wifiManager.autoConnect("Waktu Azan", "12345678");
   if (!res) {
+    
+    mp3.playFromMP3Folder(12); //0012_wifi_error_while_connecting.mp3
+    delay(15000);
     Serial.println("Failed to connect");
     ESP.restart();
   } else {
     //if you get here you have connected to the WiFi
+    mp3.playFromMP3Folder(11); //0011_wifi_berjaya_disambungkan.mp3
     Serial.println("connected...yeey :)");
   }
 
