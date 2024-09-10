@@ -133,7 +133,6 @@ void setup() {
     delay(1000);
     Serial.println("Connecting to WiFi...");
   }
-
   Serial.println("Connected to WiFi");
   digitalWrite(LED_WIFI_STATUS, HIGH); // Indicate WiFi connected
   timeClient.begin();
